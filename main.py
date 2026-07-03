@@ -38,20 +38,36 @@ def test_fred():
 
 
 def test_yahoo_finance():
-    ticker = yf.Ticker("AAPL")
-    history = ticker.history(period="5d")
+    import time
 
-    if history.empty:
-        raise RuntimeError("Yahoo Finance returned no data.")
+    last_error = None
 
-    latest_row = history.iloc[-1]
+    for attempt in range(3):
+        try:
+            ticker = yf.Ticker("AAPL")
+            history = ticker.history(period="1d")
 
-    return {
-        "source": "Yahoo Finance",
-        "status": "success",
-        "ticker": "AAPL",
-        "latest_close": round(float(latest_row["Close"]), 2)
-    }
+            if not history.empty:
+                latest_row = history.iloc[-1]
+
+                return {
+                    "source": "Yahoo Finance",
+                    "status": "success",
+                    "ticker": "AAPL",
+                    "latest_close": round(
+                        float(latest_row["Close"]), 2
+                    )
+                }
+
+        except Exception as error:
+            last_error = str(error)
+
+        if attempt < 2:
+            time.sleep(5)
+
+    raise RuntimeError(
+        f"Yahoo Finance connection failed after retries: {last_error}"
+    )
 
 
 def test_alpha_vantage():
@@ -88,12 +104,21 @@ def run_test(name, test_function):
     try:
         return test_function()
     except Exception as error:
+        error_message = str(error)
+
+        if "Too Many Requests" in error_message or "Rate limited" in error_message:
+            return {
+                "source": name,
+                "status": "rate_limited",
+                "message": "Connection attempted, but the service temporarily rate limited the request.",
+                "error": error_message
+            }
+
         return {
             "source": name,
             "status": "failed",
-            "error": str(error)
+            "error": error_message
         }
-
 
 def main():
     results = {
